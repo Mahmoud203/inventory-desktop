@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import useSWR from "swr";
 import {
   FileSpreadsheet,
   Search,
@@ -19,10 +20,7 @@ import {
 import * as XLSX from "xlsx";
 import { Link, useRouter } from "@/i18n/routing";
 import { getSession, getUser } from "@/lib/auth/local";
-import {
-  getSummaryByProduct,
-  type ProductSummary,
-} from "@/lib/data/transactions";
+import { getSummaryByProduct } from "@/lib/data/transactions";
 import { TopNav } from "@/components/TopNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,15 +67,17 @@ export default function ReportsPage() {
   const locale = (params?.locale as string) || "en";
   const router = useRouter();
 
-  // Filters State
+  // Form inputs state
   const [fromDate, setFromDate] = React.useState<string>(getDaysAgoStr(7));
   const [toDate, setToDate] = React.useState<string>(getTodayStr());
   const [filterType, setFilterType] = React.useState<"all" | "withdraw" | "add">("all");
 
-  // Data State
-  const [summaries, setSummaries] = React.useState<ProductSummary[] | null>(null);
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const [hasSearched, setHasSearched] = React.useState<boolean>(false);
+  // Active query filters state for SWR
+  const [activeFilters, setActiveFilters] = React.useState({
+    fromDate: getDaysAgoStr(7),
+    toDate: getTodayStr(),
+    filterType: "all" as "all" | "withdraw" | "add",
+  });
 
   // Sorting and Expansion
   const [sortField, setSortField] = React.useState<SortField>("name");
@@ -97,33 +97,47 @@ export default function ReportsPage() {
     verifySession();
   }, [router]);
 
-  // Load initial search on mount
-  React.useEffect(() => {
-    handleSearch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSearch = async () => {
-    setIsLoading(true);
-    setHasSearched(true);
-    try {
+  // SWR query
+  const { data: summaries, isLoading } = useSWR(
+    [
+      "reports-summary",
+      activeFilters.fromDate,
+      activeFilters.toDate,
+      activeFilters.filterType,
+    ],
+    async () => {
       const {
         data: { user },
       } = await getUser();
+      if (!user) return [];
+      return getSummaryByProduct(
+        user.id,
+        activeFilters.fromDate,
+        activeFilters.toDate,
+        activeFilters.filterType
+      );
+    },
+    { revalidateOnFocus: true }
+  );
 
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
+  const handleSearch = () => {
+    setActiveFilters({
+      fromDate,
+      toDate,
+      filterType,
+    });
+  };
 
-      const data = await getSummaryByProduct(user.id, fromDate, toDate, filterType);
-      setSummaries(data);
-    } catch (err) {
-      console.error("Failed to load report data:", err);
-      toast.error(tCommon("retry"));
-    } finally {
-      setIsLoading(false);
-    }
+  const handleQuickPreset = (days?: number) => {
+    const from = days !== undefined ? getDaysAgoStr(days) : getTodayStr();
+    const to = getTodayStr();
+    setFromDate(from);
+    setToDate(to);
+    setActiveFilters({
+      fromDate: from,
+      toDate: to,
+      filterType,
+    });
   };
 
   const toggleExpand = (id: string) => {
@@ -355,10 +369,7 @@ export default function ReportsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                setFromDate(getDaysAgoStr(7));
-                setToDate(getTodayStr());
-              }}
+              onClick={() => handleQuickPreset(7)}
               className="text-xs h-8 px-2.5 min-h-0"
             >
               {t("last7days")}
@@ -367,10 +378,7 @@ export default function ReportsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                setFromDate(getDaysAgoStr(30));
-                setToDate(getTodayStr());
-              }}
+              onClick={() => handleQuickPreset(30)}
               className="text-xs h-8 px-2.5 min-h-0"
             >
               {t("last30days")}
@@ -379,10 +387,7 @@ export default function ReportsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                setFromDate(getTodayStr());
-                setToDate(getTodayStr());
-              }}
+              onClick={() => handleQuickPreset(undefined)}
               className="text-xs h-8 px-2.5 min-h-0"
             >
               {t("today")}
@@ -391,7 +396,7 @@ export default function ReportsPage() {
         </div>
 
         {/* 2. Summary Metrics Bar */}
-        {hasSearched && summaries && summaries.length > 0 && (
+        {!isLoading && summaries && summaries.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-surface p-4 shadow-soft flex items-center gap-3 text-start">
               <div className="p-2.5 rounded-lg bg-accent/10 text-accent shrink-0">

@@ -48,16 +48,14 @@ export function QuantityAdjustDialog({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [unitNameError, setUnitNameError] = React.useState<string | null>(null);
 
-  // Reset form when dialog opens or type changes
-  React.useEffect(() => {
-    if (open) {
-      setUnitName("");
-      setQuantityStr("");
-      setNote("");
-      setUnitNameError(null);
-      setIsSubmitting(false);
-    }
-  }, [open, type]);
+  const handleClose = () => {
+    setUnitName("");
+    setQuantityStr("");
+    setNote("");
+    setUnitNameError(null);
+    setIsSubmitting(false);
+    onOpenChange(false);
+  };
 
   const parsedQty = parseInt(quantityStr, 10);
   const isValidNumber = !isNaN(parsedQty) && parsedQty > 0;
@@ -125,7 +123,13 @@ export function QuantityAdjustDialog({
   const isWithdraw = type === "withdraw";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) handleClose();
+        else onOpenChange(true);
+      }}
+    >
       <DialogContent className="max-w-md w-full">
         <DialogHeader>
           <div className="flex items-center gap-2 text-start">
@@ -238,7 +242,7 @@ export function QuantityAdjustDialog({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={handleClose}
               disabled={isSubmitting}
               className="min-h-[44px] sm:min-h-0"
             >
