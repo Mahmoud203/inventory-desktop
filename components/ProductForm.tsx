@@ -3,8 +3,11 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
 import { getUser } from "@/lib/auth/local";
+import {
+  create as createProduct,
+  update as updateProduct,
+} from "@/lib/data/products";
 import {
   UploadCloud,
   X,
@@ -32,6 +35,7 @@ export interface InitialProductData {
   name: string;
   notes: string | null;
   photo_url: string | null;
+  photo_path?: string | null;
   has_qr: boolean;
   qr_data: string | null;
   share_token?: string | null;
@@ -54,7 +58,6 @@ export function ProductForm({
   const tCommon = useTranslations("common");
   const params = useParams();
   const locale = (params?.locale as string) || "en";
-  const supabase = createClient();
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -190,92 +193,86 @@ export function ProductForm({
         throw new Error("UNAUTHORIZED");
       }
 
-      let finalPhotoUrl: string | null = initialProduct?.photo_url || null;
+      let finalPhotoPath: string | null =
+        initialProduct?.photo_path || initialProduct?.photo_url || null;
 
       if (isPhotoRemoved) {
-        finalPhotoUrl = null;
+        finalPhotoPath = null;
       }
 
       // Upload photo if new file selected
       if (photoFile) {
         setUploadProgress(40);
-        const fileExt = photoFile.name.split(".").pop()?.toLowerCase() || "jpg";
-        const photoKey = `${user.id}/${crypto.randomUUID()}.${fileExt}`;
+        const formData = new FormData();
+        formData.append("file", photoFile);
 
-        const { error: uploadError } = await supabase.storage
-          .from("product-photos")
-          .upload(photoKey, photoFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
+        const res = await fetch("/api/photos/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-        if (uploadError) {
-          throw uploadError;
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to upload photo");
         }
 
         setUploadProgress(85);
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("product-photos").getPublicUrl(photoKey);
-
-        finalPhotoUrl = publicUrl;
+        const { path } = await res.json();
+        finalPhotoPath = path;
       }
 
       setUploadProgress(95);
 
-      const origin =
-        process.env.NEXT_PUBLIC_APP_URL ||
-        (typeof window !== "undefined" ? window.location.origin : "");
-      const cleanOrigin = origin.replace(/\/+$/, "");
-
       if (initialProduct) {
         // UPDATE existing product
-        let shareToken: string | null = null;
         let qrData: string | null = null;
-
         if (hasQr) {
-          shareToken = initialProduct.share_token || crypto.randomUUID();
-          qrData = `${cleanOrigin}/${locale}/p/${shareToken}`;
+          qrData = JSON.stringify({
+            v: 1,
+            id: initialProduct.id,
+            name: name.trim(),
+            notes: notes.trim(),
+          });
         }
 
-        const { error: updateError } = await supabase
-          .from("products")
-          .update({
+        await updateProduct(
+          initialProduct.id,
+          {
             name: name.trim(),
             notes: notes.trim() || null,
-            photo_url: finalPhotoUrl,
+            photo_path: finalPhotoPath,
             has_qr: hasQr,
             qr_data: qrData,
-            share_token: shareToken,
-          })
-          .eq("id", initialProduct.id);
-
-        if (updateError) {
-          throw updateError;
-        }
+          },
+          user.id
+        );
 
         toast.success(t("updateSuccess"));
       } else {
         // CREATE new product
         const productId = crypto.randomUUID();
-        const shareToken = hasQr ? crypto.randomUUID() : null;
-        const qrData = hasQr ? `${cleanOrigin}/${locale}/p/${shareToken}` : null;
-
-        const { error: insertError } = await supabase.from("products").insert({
-          id: productId,
-          store_id: storeId,
-          user_id: user.id,
-          name: name.trim(),
-          notes: notes.trim() || null,
-          photo_url: finalPhotoUrl,
-          has_qr: hasQr,
-          qr_data: qrData,
-          share_token: shareToken,
-        });
-
-        if (insertError) {
-          throw insertError;
+        let qrData: string | null = null;
+        if (hasQr) {
+          qrData = JSON.stringify({
+            v: 1,
+            id: productId,
+            name: name.trim(),
+            notes: notes.trim(),
+          });
         }
+
+        await createProduct(
+          {
+            id: productId,
+            store_id: storeId,
+            name: name.trim(),
+            notes: notes.trim() || null,
+            photo_path: finalPhotoPath,
+            has_qr: hasQr,
+            qr_data: qrData,
+          },
+          user.id
+        );
 
         toast.success(t("createSuccess"));
       }
