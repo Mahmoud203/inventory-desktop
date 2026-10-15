@@ -3,8 +3,8 @@
 import * as React from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getUser } from "@/lib/auth/local";
+import { search as searchProducts } from "@/lib/data/products";
 import {
   Search,
   ChevronRight,
@@ -41,7 +41,6 @@ export function SearchBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const t = useTranslations("search");
   const tCommon = useTranslations("common");
   const router = useRouter();
-  const supabase = createClient();
 
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResultItem[]>([]);
@@ -70,38 +69,12 @@ export function SearchBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
 
         if (!user || !isCurrent) return;
 
-        const { data, error } = await supabase
-          .from("products")
-          .select(
-            `
-            id,
-            name,
-            photo_url,
-            store_id,
-            stores (
-              id,
-              name,
-              section_id,
-              sections (
-                id,
-                name
-              )
-            )
-          `
-          )
-          .eq("user_id", user.id)
-          .ilike("name", `%${trimmed}%`)
-          .limit(8);
+        const data = await searchProducts(trimmed, user.id);
 
         if (!isCurrent) return;
 
-        if (error) {
-          console.error("Search query error:", error);
-          setResults([]);
-        } else {
-          setResults((data as unknown as SearchResultItem[]) || []);
-          setActiveIndex(-1);
-        }
+        setResults(data as unknown as SearchResultItem[]);
+        setActiveIndex(-1);
       } catch (err) {
         console.error("Search error:", err);
         if (isCurrent) setResults([]);
@@ -116,7 +89,7 @@ export function SearchBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
       isCurrent = false;
       clearTimeout(timer);
     };
-  }, [query, supabase]);
+  }, [query]);
 
   const handleSelectProduct = (productId: string) => {
     setIsOpen(false);

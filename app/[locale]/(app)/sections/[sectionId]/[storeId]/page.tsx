@@ -14,8 +14,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getSession, getUser } from "@/lib/auth/local";
+import { get as getSection } from "@/lib/data/sections";
+import { get as getStore, remove as removeStore } from "@/lib/data/stores";
+import { list as listProducts } from "@/lib/data/products";
 import { TopNav } from "@/components/TopNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +30,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { deleteStoreWithStorage } from "@/lib/supabase/delete-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProductFormModal } from "@/components/ProductFormModal";
@@ -61,7 +62,6 @@ export default function StoreProductsPage() {
   const storeId = params?.storeId as string;
 
   const router = useRouter();
-  const supabase = createClient();
 
   const [isFormOpen, setIsFormOpen] = React.useState(false);
 
@@ -84,14 +84,23 @@ export default function StoreProductsPage() {
 
   // Fetch Section and Store names for Breadcrumbs
   const fetchHierarchy = async (): Promise<HierarchyInfo> => {
-    const [secRes, storeRes] = await Promise.all([
-      supabase.from("sections").select("name").eq("id", sectionId).single(),
-      supabase.from("stores").select("name").eq("id", storeId).single(),
+    const {
+      data: { user },
+      error: userError,
+    } = await getUser();
+
+    if (userError || !user) {
+      throw new Error("UNAUTHORIZED");
+    }
+
+    const [sec, store] = await Promise.all([
+      getSection(sectionId, user.id),
+      getStore(storeId, user.id),
     ]);
 
     return {
-      sectionName: secRes.data?.name || "",
-      storeName: storeRes.data?.name || "",
+      sectionName: sec?.name || "",
+      storeName: store?.name || "",
     };
   };
 
@@ -112,17 +121,16 @@ export default function StoreProductsPage() {
       throw new Error("UNAUTHORIZED");
     }
 
-    const { data, error } = await supabase
-      .from("products")
-      .select("id, name, notes, photo_url, has_qr, qr_data, created_at")
-      .eq("store_id", storeId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
-    return data || [];
+    const items = await listProducts(user.id, storeId);
+    return items.map((p) => ({
+      id: p.id,
+      name: p.name,
+      notes: p.notes,
+      photo_url: p.photo_url,
+      has_qr: p.has_qr,
+      qr_data: p.qr_data,
+      created_at: p.created_at,
+    }));
   };
 
   const {
@@ -144,7 +152,16 @@ export default function StoreProductsPage() {
   const handleDeleteStore = async () => {
     setIsDeletingStore(true);
     try {
-      await deleteStoreWithStorage(supabase, storeId);
+      const {
+        data: { user },
+      } = await getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      await removeStore(storeId, user.id);
       toast.success(tStores("deleteSuccess"));
       globalMutate(`stores-${sectionId}`);
       router.push(`/sections/${sectionId}`);

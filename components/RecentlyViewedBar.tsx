@@ -5,21 +5,14 @@ import { useTranslations } from "next-intl";
 import useSWR from "swr";
 import { Clock, ImageIcon } from "lucide-react";
 import { Link } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getSession } from "@/lib/auth/local";
+import { list as listRecentlyViewed } from "@/lib/data/recently-viewed";
 import { cn } from "@/lib/utils";
 
 interface ProductRecord {
   id: string;
   name: string;
   photo_url: string | null;
-}
-
-interface RecentlyViewedRow {
-  id: string;
-  product_id: string;
-  viewed_at: string;
-  products: ProductRecord | ProductRecord[] | null;
 }
 
 interface RecentlyViewedItem {
@@ -30,7 +23,6 @@ interface RecentlyViewedItem {
 
 export function RecentlyViewedBar() {
   const t = useTranslations("recentlyViewed");
-  const supabase = createClient();
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const [canScrollStart, setCanScrollStart] = React.useState(false);
@@ -44,42 +36,23 @@ export function RecentlyViewedBar() {
       return [];
     }
 
-    const { data, error } = await supabase
-      .from("recently_viewed")
-      .select(
-        `
-        id,
-        product_id,
-        viewed_at,
-        products (
-          id,
-          name,
-          photo_url
-        )
-      `
-      )
-      .eq("user_id", session.user.id)
-      .order("viewed_at", { ascending: false })
-      .limit(20);
-
-    if (error || !data) {
-      return [];
-    }
-
+    const rows = await listRecentlyViewed(session.user.id);
     const result: RecentlyViewedItem[] = [];
     const seenProductIds = new Set<string>();
 
-    for (const row of data as unknown as RecentlyViewedRow[]) {
-      const product = Array.isArray(row.products)
-        ? row.products[0]
-        : row.products;
+    for (const row of rows) {
+      const product = row.products;
 
       if (product && product.id && !seenProductIds.has(product.id)) {
         seenProductIds.add(product.id);
         result.push({
           id: row.id,
           viewed_at: row.viewed_at,
-          product,
+          product: {
+            id: product.id,
+            name: product.name,
+            photo_url: product.photo_url,
+          },
         });
       }
     }

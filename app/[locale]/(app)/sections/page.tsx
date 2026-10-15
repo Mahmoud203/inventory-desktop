@@ -6,8 +6,12 @@ import { useTranslations } from "next-intl";
 import useSWR from "swr";
 import { Plus, ChevronRight, PackageOpen, LayoutGrid, MoreHorizontal } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getSession, getUser } from "@/lib/auth/local";
+import {
+  list as listSections,
+  create as createSection,
+  remove as removeSection,
+} from "@/lib/data/sections";
 import { TopNav } from "@/components/TopNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +32,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { deleteSectionWithStorage } from "@/lib/supabase/delete-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
@@ -42,23 +45,12 @@ interface SectionWithCount {
   productCount: number;
 }
 
-interface SectionQueryResult {
-  id: string;
-  name: string;
-  created_at: string;
-  stores?: {
-    id: string;
-    products?: { id: string }[];
-  }[];
-}
-
 export default function SectionsPage() {
   const t = useTranslations("sections");
   const tCommon = useTranslations("common");
   const params = useParams();
   const locale = (params?.locale as string) || "en";
   const router = useRouter();
-  const supabase = createClient();
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [sectionName, setSectionName] = React.useState("");
@@ -94,37 +86,13 @@ export default function SectionsPage() {
       throw new Error("UNAUTHORIZED");
     }
 
-    const { data, error } = await supabase
-      .from("sections")
-      .select(
-        `
-        id,
-        name,
-        created_at,
-        stores (
-          id,
-          products (id)
-        )
-      `
-      )
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
-    return ((data || []) as unknown as SectionQueryResult[]).map((row) => ({
+    const data = await listSections(user.id);
+    return data.map((row) => ({
       id: row.id,
       name: row.name,
       created_at: row.created_at,
-      storeCount: Array.isArray(row.stores) ? row.stores.length : 0,
-      productCount: Array.isArray(row.stores)
-        ? row.stores.reduce(
-          (acc, st) =>
-            acc + (Array.isArray(st.products) ? st.products.length : 0),
-          0
-        )
-        : 0,
+      storeCount: row.storeCount || 0,
+      productCount: row.productCount || 0,
     }));
   };
 
@@ -164,14 +132,7 @@ export default function SectionsPage() {
         return;
       }
 
-      const { error: insertError } = await supabase.from("sections").insert({
-        name: sectionName.trim(),
-        user_id: user.id,
-      });
-
-      if (insertError) {
-        throw insertError;
-      }
+      await createSection({ name: sectionName.trim() }, user.id);
 
       toast.success(t("createSuccess"));
       await mutate();
@@ -197,7 +158,16 @@ export default function SectionsPage() {
     );
 
     try {
-      await deleteSectionWithStorage(supabase, targetSection.id);
+      const {
+        data: { user },
+      } = await getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      await removeSection(targetSection.id, user.id);
       toast.success(t("deleteSuccess"));
       setSectionToDelete(null);
       await mutate();

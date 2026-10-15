@@ -6,8 +6,16 @@ import { useTranslations } from "next-intl";
 import useSWR, { mutate as globalMutate } from "swr";
 import { Plus, ChevronRight, Store, Warehouse, MoreHorizontal, Trash2 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getSession, getUser } from "@/lib/auth/local";
+import {
+  get as getSection,
+  remove as removeSection,
+} from "@/lib/data/sections";
+import {
+  list as listStores,
+  create as createStore,
+  remove as removeStore,
+} from "@/lib/data/stores";
 import { TopNav } from "@/components/TopNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +44,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { deleteStoreWithStorage, deleteSectionWithStorage } from "@/lib/supabase/delete-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
@@ -55,14 +62,6 @@ interface SectionInfo {
   name: string;
 }
 
-interface StoreQueryResult {
-  id: string;
-  name: string;
-  section_id: string;
-  created_at: string;
-  products?: { id: string }[];
-}
-
 export default function SectionDetailsPage() {
   const tSections = useTranslations("sections");
   const tStores = useTranslations("stores");
@@ -74,7 +73,6 @@ export default function SectionDetailsPage() {
   const sectionId = params?.sectionId as string;
 
   const router = useRouter();
-  const supabase = createClient();
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [storeName, setStoreName] = React.useState("");
@@ -105,16 +103,20 @@ export default function SectionDetailsPage() {
 
   // Fetch Section Info (for Breadcrumb & Header)
   const fetchSection = async (): Promise<SectionInfo> => {
-    const { data, error } = await supabase
-      .from("sections")
-      .select("id, name")
-      .eq("id", sectionId)
-      .single();
+    const {
+      data: { user },
+      error: userError,
+    } = await getUser();
 
-    if (error) {
-      throw error;
+    if (userError || !user) {
+      throw new Error("UNAUTHORIZED");
     }
-    return data;
+
+    const data = await getSection(sectionId, user.id);
+    if (!data) {
+      throw new Error("Section not found");
+    }
+    return { id: data.id, name: data.name };
   };
 
   const { data: section } = useSWR(
@@ -134,30 +136,13 @@ export default function SectionDetailsPage() {
       throw new Error("UNAUTHORIZED");
     }
 
-    const { data, error } = await supabase
-      .from("stores")
-      .select(
-        `
-        id,
-        name,
-        section_id,
-        created_at,
-        products (id)
-      `
-      )
-      .eq("section_id", sectionId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      throw error;
-    }
-
-    return ((data || []) as unknown as StoreQueryResult[]).map((row) => ({
+    const data = await listStores(user.id, sectionId);
+    return data.map((row) => ({
       id: row.id,
       name: row.name,
       section_id: row.section_id,
       created_at: row.created_at,
-      productCount: Array.isArray(row.products) ? row.products.length : 0,
+      productCount: row.productCount || 0,
     }));
   };
 
@@ -197,15 +182,10 @@ export default function SectionDetailsPage() {
         return;
       }
 
-      const { error: insertError } = await supabase.from("stores").insert({
-        name: storeName.trim(),
-        section_id: sectionId,
-        user_id: user.id,
-      });
-
-      if (insertError) {
-        throw insertError;
-      }
+      await createStore(
+        { name: storeName.trim(), section_id: sectionId },
+        user.id
+      );
 
       toast.success(tStores("createSuccess"));
       await mutate();
@@ -231,7 +211,16 @@ export default function SectionDetailsPage() {
     );
 
     try {
-      await deleteStoreWithStorage(supabase, targetStore.id);
+      const {
+        data: { user },
+      } = await getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      await removeStore(targetStore.id, user.id);
       toast.success(tStores("deleteSuccess"));
       setStoreToDelete(null);
       await mutate();
@@ -255,7 +244,16 @@ export default function SectionDetailsPage() {
     setIsDeletingSection(true);
 
     try {
-      await deleteSectionWithStorage(supabase, section.id);
+      const {
+        data: { user },
+      } = await getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      await removeSection(section.id, user.id);
       toast.success(tSections("deleteSuccess"));
       globalMutate("sections");
       router.push("/sections");
