@@ -27,6 +27,7 @@
     "searchPlaceholder": "Search bays, stores, SKUs...",
     "sections": "Sections",
     "reports": "Reports",
+    "settings": "Settings",
     "logout": "Sign Out"
   },
   "search": {
@@ -254,5 +255,23 @@
     "exportExcel": "Export to Excel",
     "summary": "Summary",
     "details": "Details"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage application data, backups, and desktop system information.",
+    "backupSection": "Backup",
+    "backupDescription": "Export all your warehouse data, database records, and photos as a compressed backup archive.",
+    "exportBackup": "Export backup",
+    "backupSuccess": "Backup saved successfully to {path}",
+    "backupFailed": "Failed to create backup archive",
+    "restoreSection": "Restore",
+    "restoreDescription": "Restore your database and photos from a previously exported backup file. This will replace all current data.",
+    "restoreButton": "Restore from backup",
+    "restoreSuccess": "Data restored successfully. Restarting application...",
+    "restoreFailed": "Failed to restore data",
+    "aboutSection": "About",
+    "appName": "Inventory App",
+    "version": "Version",
+    "desktopOnlyNotice": "Backup and restore features are only available in the desktop app."
   }
 }

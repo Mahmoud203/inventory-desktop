@@ -45,3 +45,8 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+
+# electron
+/dist-electron
+!/build/icon.ico
+

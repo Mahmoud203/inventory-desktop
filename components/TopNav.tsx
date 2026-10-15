@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Link, useRouter, usePathname } from "@/i18n/routing";
 import { signOut } from "@/lib/auth/local";
-import { LogOut, FileSpreadsheet } from "lucide-react";
+import { LogOut, FileSpreadsheet, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LocaleSwitcher } from "@/components/ui/locale-switcher";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -20,6 +20,7 @@ export function TopNav({ currentLocale }: { currentLocale: string }) {
   const pathname = usePathname();
 
   const isReportsActive = pathname === "/reports" || pathname.startsWith("/reports/");
+  const isSettingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
 
   const handleSignOut = async () => {
     try {
@@ -102,6 +103,21 @@ export function TopNav({ currentLocale }: { currentLocale: string }) {
           <div className="md:hidden">
             <SearchBar mobileOnly />
           </div>
+
+          {/* Settings Link (Gear icon size 18) */}
+          <Link
+            href="/settings"
+            className={cn(
+              "flex items-center justify-center h-10 w-10 sm:h-8 sm:w-8 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-md transition-colors",
+              isSettingsActive
+                ? "bg-accent/15 text-accent font-semibold"
+                : "text-muted hover:text-foreground hover:bg-surface-raised"
+            )}
+            title={tNav("settings")}
+            aria-label={tNav("settings")}
+          >
+            <Settings className="h-[18px] w-[18px]" />
+          </Link>
 
           <ThemeToggle />
           <LocaleSwitcher currentLocale={currentLocale} />
