@@ -3,19 +3,23 @@
 import * as React from "react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { Link, useRouter } from "@/i18n/routing";
+import { Link, useRouter, usePathname } from "@/i18n/routing";
 import { signOut } from "@/lib/auth/local";
-import { LogOut } from "lucide-react";
+import { LogOut, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LocaleSwitcher } from "@/components/ui/locale-switcher";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export function TopNav({ currentLocale }: { currentLocale: string }) {
   const tNav = useTranslations("nav");
   const tCommon = useTranslations("common");
   const router = useRouter();
+  const pathname = usePathname();
+
+  const isReportsActive = pathname === "/reports" || pathname.startsWith("/reports/");
 
   const handleSignOut = async () => {
     try {
@@ -57,13 +61,43 @@ export function TopNav({ currentLocale }: { currentLocale: string }) {
           </Link>
         </div>
 
-        {/* Center: Desktop Global Search Bar */}
-        <div className="flex-1 max-w-md mx-auto hidden md:block">
-          <SearchBar />
+        {/* Center: Desktop Global Search Bar + Reports Link */}
+        <div className="flex-1 max-w-lg mx-auto hidden md:flex items-center gap-3">
+          <div className="flex-1">
+            <SearchBar />
+          </div>
+          <Link
+            href="/reports"
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors shrink-0",
+              isReportsActive
+                ? "bg-accent/15 text-accent font-semibold"
+                : "text-muted hover:text-foreground hover:bg-surface-raised"
+            )}
+            title={tNav("reports")}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            <span>{tNav("reports")}</span>
+          </Link>
         </div>
 
-        {/* Right/End: Controls (Mobile Search Icon, Theme Toggle, Locale Switcher, Logout) */}
+        {/* Right/End: Controls (Mobile Search Icon, Reports, Theme Toggle, Locale Switcher, Logout) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Mobile Reports Link */}
+          <Link
+            href="/reports"
+            className={cn(
+              "md:hidden flex items-center justify-center h-10 w-10 min-h-[44px] min-w-[44px] rounded-md transition-colors",
+              isReportsActive
+                ? "bg-accent/15 text-accent"
+                : "text-muted hover:text-foreground hover:bg-surface-raised"
+            )}
+            title={tNav("reports")}
+            aria-label={tNav("reports")}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+          </Link>
+
           {/* Mobile search icon button opening full-screen overlay */}
           <div className="md:hidden">
             <SearchBar mobileOnly />
