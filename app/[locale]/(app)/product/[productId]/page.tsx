@@ -10,12 +10,14 @@ import {
   Download,
   AlertTriangle,
   ImageIcon,
-  Copy,
-  RefreshCw,
 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
 import { getSession, getUser } from "@/lib/auth/local";
+import {
+  get as getProduct,
+  remove as removeProduct,
+} from "@/lib/data/products";
+import { record as recordRecentlyViewed } from "@/lib/data/recently-viewed";
 import { generateQrDataUrl } from "@/lib/qrcode";
 import { TopNav } from "@/components/TopNav";
 import { Button } from "@/components/ui/button";
@@ -46,9 +48,9 @@ interface ProductDetailData {
   name: string;
   notes: string | null;
   photo_url: string | null;
+  photo_path?: string | null;
   has_qr: boolean;
   qr_data: string | null;
-  share_token: string | null;
   created_at: string;
   stores?: {
     id: string;
@@ -71,15 +73,11 @@ export default function ProductDetailPage() {
   const productId = params?.productId as string;
 
   const router = useRouter();
-  const supabase = createClient();
 
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [isRegenerateDialogOpen, setIsRegenerateDialogOpen] = React.useState(false);
-  const [isRegenerating, setIsRegenerating] = React.useState(false);
   const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
-  const migratingRef = React.useRef(false);
 
   // Protected route check
   React.useEffect(() => {
@@ -105,35 +103,9 @@ export default function ProductDetailPage() {
       throw new Error("UNAUTHORIZED");
     }
 
-    const { data, error } = await supabase
-      .from("products")
-      .select(
-        `
-        id,
-        store_id,
-        name,
-        notes,
-        photo_url,
-        has_qr,
-        qr_data,
-        share_token,
-        created_at,
-        stores (
-          id,
-          name,
-          section_id,
-          sections (
-            id,
-            name
-          )
-        )
-      `
-      )
-      .eq("id", productId)
-      .single();
-
-    if (error) {
-      throw error;
+    const data = await getProduct(productId, user.id);
+    if (!data) {
+      throw new Error("Product not found");
     }
 
     return data as unknown as ProductDetailData;
@@ -155,51 +127,20 @@ export default function ProductDetailPage() {
     }
   }, [productError, router]);
 
-  // Base URL & Public URL resolution
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (typeof window !== "undefined" ? window.location.origin : "");
-  const cleanOrigin = origin.replace(/\/+$/, "");
-  const publicUrl = product?.share_token
-    ? `${cleanOrigin}/${locale}/p/${product.share_token}`
-    : null;
-
-  // Auto-migrate products with has_qr = true but no share_token
-  React.useEffect(() => {
-    if (product && product.has_qr && !product.share_token && !migratingRef.current) {
-      migratingRef.current = true;
-      const autoMigrate = async () => {
-        try {
-          const newToken = crypto.randomUUID();
-          const newQrData = `${cleanOrigin}/${locale}/p/${newToken}`;
-
-          const { error } = await supabase
-            .from("products")
-            .update({
-              share_token: newToken,
-              qr_data: newQrData,
-            })
-            .eq("id", product.id);
-
-          if (!error) {
-            mutate();
-          }
-        } catch (err) {
-          console.error("Auto-migration of product share_token failed:", err);
-        } finally {
-          migratingRef.current = false;
-        }
-      };
-      autoMigrate();
-    }
-  }, [product, cleanOrigin, locale, supabase, mutate]);
-
   // Generate QR Code data URL when product loads with has_qr
   React.useEffect(() => {
     let isCancelled = false;
-    const targetPayload = publicUrl || (product?.has_qr ? product?.qr_data : null);
 
-    if (product?.has_qr && targetPayload) {
+    if (product?.has_qr) {
+      const targetPayload =
+        product.qr_data ||
+        JSON.stringify({
+          v: 1,
+          id: product.id,
+          name: product.name,
+          notes: product.notes || "",
+        });
+
       generateQrDataUrl(targetPayload)
         .then((url) => {
           if (!isCancelled) {
@@ -210,49 +151,32 @@ export default function ProductDetailPage() {
           console.error("Failed to generate QR Code data URL:", err);
         });
     } else {
-      Promise.resolve().then(() => {
-        if (!isCancelled) {
-          setQrDataUrl(null);
-        }
-      });
+      setQrDataUrl(null);
     }
 
     return () => {
       isCancelled = true;
     };
-  }, [product?.has_qr, product?.qr_data, publicUrl]);
+  }, [
+    product?.has_qr,
+    product?.qr_data,
+    product?.id,
+    product?.name,
+    product?.notes,
+  ]);
 
   // Record Recently Viewed on Mount
   React.useEffect(() => {
     if (!productId) return;
 
-    const recordRecentlyViewed = async () => {
+    const recordRecently = async () => {
       try {
         const {
           data: { user },
         } = await getUser();
         if (!user) return;
 
-        // Upsert into recently_viewed
-        const { data: existing } = await supabase
-          .from("recently_viewed")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("product_id", productId)
-          .maybeSingle();
-
-        if (existing) {
-          await supabase
-            .from("recently_viewed")
-            .update({ viewed_at: new Date().toISOString() })
-            .eq("id", existing.id);
-        } else {
-          await supabase.from("recently_viewed").insert({
-            user_id: user.id,
-            product_id: productId,
-            viewed_at: new Date().toISOString(),
-          });
-        }
+        await recordRecentlyViewed(productId, user.id);
 
         // Mutate recently-viewed SWR key for instant bar updates
         globalMutate("recently-viewed");
@@ -261,8 +185,8 @@ export default function ProductDetailPage() {
       }
     };
 
-    recordRecentlyViewed();
-  }, [productId, supabase]);
+    recordRecently();
+  }, [productId]);
 
   const handleDownloadQr = () => {
     if (!qrDataUrl || !product) return;
@@ -278,59 +202,21 @@ export default function ProductDetailPage() {
     document.body.removeChild(link);
   };
 
-  const handleCopyLink = async () => {
-    if (!publicUrl) return;
-    try {
-      await navigator.clipboard.writeText(publicUrl);
-      toast.success(tDetail("linkCopied"));
-    } catch {
-      toast.error("Failed to copy link");
-    }
-  };
-
-  const handleRegenerateLink = async () => {
-    if (!product) return;
-    setIsRegenerating(true);
-    try {
-      const newToken = crypto.randomUUID();
-      const newQrData = `${cleanOrigin}/${locale}/p/${newToken}`;
-
-      const { error } = await supabase
-        .from("products")
-        .update({
-          share_token: newToken,
-          qr_data: newQrData,
-        })
-        .eq("id", product.id);
-
-      if (error) {
-        throw error;
-      }
-
-      toast.success(tDetail("regenerateSuccess"));
-      setIsRegenerateDialogOpen(false);
-      mutate();
-    } catch (err) {
-      console.error("Failed to regenerate QR:", err);
-      toast.error(tDetail("regenerateError"));
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!product) return;
     setIsDeleting(true);
 
     try {
-      const { error } = await supabase
-        .from("products")
-        .delete()
-        .eq("id", product.id);
+      const {
+        data: { user },
+      } = await getUser();
 
-      if (error) {
-        throw error;
+      if (!user) {
+        router.replace("/login");
+        return;
       }
+
+      await removeProduct(product.id, user.id);
 
       toast.success(tDetail("deleteSuccess"));
       globalMutate("recently-viewed");
@@ -353,48 +239,45 @@ export default function ProductDetailPage() {
 
   const initialProductData: InitialProductData | null = product
     ? {
-      id: product.id,
-      name: product.name,
-      notes: product.notes,
-      photo_url: product.photo_url,
-      has_qr: product.has_qr,
-      qr_data: product.qr_data,
-      share_token: product.share_token,
-    }
+        id: product.id,
+        name: product.name,
+        notes: product.notes,
+        photo_url: product.photo_url,
+        photo_path: product.photo_path,
+        has_qr: product.has_qr,
+        qr_data: product.qr_data,
+      }
     : null;
 
   return (
-    <div className="min-h-screen bg-bg text-foreground pb-16">
+    <div className="min-h-screen bg-bg text-foreground">
       <TopNav currentLocale={locale} />
 
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-        {/* Navigation & Actions Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Breadcrumb Navigation */}
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link href="/sections">{tNav("sections")}</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                {product?.stores?.sections ? (
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/sections">{tNav("sections")}</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            {product?.stores?.sections && (
+              <>
+                <BreadcrumbItem>
                   <BreadcrumbLink asChild>
-                    <Link
-                      href={`/sections/${product.stores.sections.id}`}
-                    >
+                    <Link href={`/sections/${product.stores.section_id}`}>
                       {product.stores.sections.name}
                     </Link>
                   </BreadcrumbLink>
-                ) : (
-                  <Skeleton className="h-4 w-20 inline-block align-middle" />
-                )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                {product?.stores ? (
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+              </>
+            )}
+            {product?.stores && (
+              <>
+                <BreadcrumbItem>
                   <BreadcrumbLink asChild>
                     <Link
                       href={`/sections/${product.stores.section_id}/${product.store_id}`}
@@ -402,108 +285,101 @@ export default function ProductDetailPage() {
                       {product.stores.name}
                     </Link>
                   </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+              </>
+            )}
+            <BreadcrumbItem>
+              <BreadcrumbPage>
+                {isLoading ? (
+                  <Skeleton className="h-4 w-24" />
                 ) : (
-                  <Skeleton className="h-4 w-24 inline-block align-middle" />
+                  product?.name || ""
                 )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>
-                  {product ? (
-                    product.name
-                  ) : (
-                    <Skeleton className="h-4 w-28 inline-block align-middle" />
-                  )}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
-          {/* Top-Right Action Buttons */}
-          {product && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsEditDialogOpen(true)}
-                className="gap-1.5 text-muted hover:text-foreground w-full sm:w-auto justify-center min-h-[44px] sm:min-h-0"
-              >
-                <Edit className="h-4 w-4" />
-                <span>{tDetail("edit")}</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsDeleteDialogOpen(true)}
-                className="gap-1.5 text-danger hover:bg-danger/10 hover:text-danger w-full sm:w-auto justify-center min-h-[44px] sm:min-h-0"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>{tDetail("delete")}</span>
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Content Body: Loading Skeleton vs Detail View */}
-        {isLoading || !product ? (
-          <div className="space-y-8 animate-in fade-in-50 duration-200">
-            {/* 1. Large Photo Skeleton */}
-            <Skeleton className="aspect-[4/3] w-full md:max-w-md mx-auto rounded-xl" />
-
-            {/* 2. Title & Notes Skeleton */}
-            <div className="space-y-3 text-start">
-              <Skeleton className="h-9 w-3/4" />
-              <Skeleton className="h-5 w-full" />
-              <Skeleton className="h-5 w-4/5" />
-            </div>
-
-            {/* 3. QR Skeleton */}
-            <div className="w-full max-w-xs sm:max-w-md mx-auto p-4 sm:p-6 rounded-xl border border-border bg-surface text-center space-y-4">
-              <Skeleton className="h-40 w-40 sm:h-48 sm:w-48 mx-auto rounded-lg" />
-              <Skeleton className="h-8 w-32 mx-auto" />
+        {/* Loading Skeleton */}
+        {isLoading && (
+          <div className="space-y-6">
+            <Skeleton className="w-full aspect-[4/3] sm:aspect-[16/9] max-h-96 rounded-xl" />
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-2/3" />
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-20 w-full" />
             </div>
           </div>
-        ) : (
-          <div className="space-y-8 animate-in fade-in-50 duration-200 text-start">
-            {/* 1. Large Photo (w-full mobile, max-w-md desktop) */}
-            <div className="relative w-full md:max-w-md mx-auto aspect-[4/3] overflow-hidden rounded-xl border border-border bg-secondary/30 shadow-soft flex items-center justify-center">
-              {product.photo_url ? (
+        )}
+
+        {/* Product Content */}
+        {!isLoading && product && (
+          <div className="space-y-6">
+            {/* 1. Large Photo Display */}
+            {product.photo_url ? (
+              <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-96 rounded-xl overflow-hidden border border-border bg-surface-raised shadow-soft">
                 <img
                   src={product.photo_url}
                   alt={product.name}
-                  className="h-full w-full object-cover"
+                  className="w-full h-full object-contain sm:object-cover bg-neutral-900/10 dark:bg-neutral-950/40"
                 />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-muted/50">
-                  <ImageIcon className="h-16 w-16 sm:h-20 sm:w-20 stroke-[1.2]" />
-                </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="w-full aspect-[4/3] sm:aspect-[16/9] max-h-72 rounded-xl border border-dashed border-border bg-surface flex flex-col items-center justify-center gap-2 text-muted">
+                <ImageIcon className="h-10 w-10 opacity-30" />
+                <span className="text-xs sm:text-sm">
+                  {tDetail("noPhoto")}
+                </span>
+              </div>
+            )}
 
-            {/* 2. Product Name (text-2xl sm:text-3xl) */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2">
-                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+            {/* 2. Title & Primary Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-border/40 pb-6">
+              <div className="space-y-1 text-start">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                   {product.name}
                 </h1>
-                <div className="text-xs text-muted shrink-0 flex items-center gap-1.5">
-                  <span>{tDetail("addedOn")}:</span>
-                  <time dateTime={product.created_at} className="font-medium text-foreground/80">
-                    {new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-US", {
-                      dateStyle: "medium",
-                    }).format(new Date(product.created_at))}
-                  </time>
-                </div>
+                <p className="text-xs sm:text-sm text-muted">
+                  {product.stores?.name} • {product.stores?.sections?.name}
+                </p>
               </div>
 
-              {/* 3. Notes (text-sm sm:text-base, muted color, max-w-prose) */}
+              {/* Action Buttons: Edit & Delete */}
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditDialogOpen(true)}
+                  className="gap-2 flex-1 sm:flex-none min-h-[44px] sm:min-h-0"
+                >
+                  <Edit className="h-4 w-4" />
+                  <span>{tDetail("edit")}</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  className="gap-2 text-danger hover:text-danger hover:bg-danger/10 flex-1 sm:flex-none min-h-[44px] sm:min-h-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>{tDetail("delete")}</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* 3. Notes Section */}
+            <div className="space-y-2 text-start">
+              <h2 className="text-xs uppercase font-semibold text-muted tracking-wider">
+                {tDetail("notesHeading")}
+              </h2>
               <div className="text-sm sm:text-base text-muted max-w-prose leading-relaxed whitespace-pre-line">
                 {product.notes || tDetail("noNotes")}
               </div>
             </div>
 
             {/* 4. QR Code Card (max-w-xs on mobile, max-w-md on desktop) */}
-            {product.has_qr && (product.share_token || product.qr_data) && (
+            {product.has_qr && (
               <div className="pt-4">
                 <div className="w-full max-w-xs sm:max-w-md mx-auto rounded-xl border border-border bg-surface p-4 sm:p-6 shadow-soft text-center space-y-4">
                   <div className="space-y-1">
@@ -533,8 +409,8 @@ export default function ProductDetailPage() {
                     {tDetail("qrCaption")}
                   </p>
 
-                  {/* Action buttons: Download QR + Copy link */}
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
+                  {/* Action button: Download QR */}
+                  <div className="flex items-center justify-center pt-1">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -544,30 +420,6 @@ export default function ProductDetailPage() {
                       <Download className="h-4 w-4" />
                       <span>{tDetail("downloadQr")}</span>
                     </Button>
-                    {publicUrl && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCopyLink}
-                        className="gap-2 text-muted hover:text-foreground w-full sm:w-auto min-h-[44px] sm:min-h-0"
-                      >
-                        <Copy className="h-4 w-4" />
-                        <span>{tDetail("copyLink")}</span>
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Regenerate link button */}
-                  <div className="pt-2 border-t border-border/40 flex justify-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsRegenerateDialogOpen(true)}
-                      className="gap-1.5 text-danger/80 hover:text-danger hover:bg-danger/10 w-full sm:w-auto min-h-[44px] sm:min-h-0 text-xs"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      <span>{tDetail("regenerateLink")}</span>
-                    </Button>
                   </div>
                 </div>
               </div>
@@ -576,7 +428,7 @@ export default function ProductDetailPage() {
         )}
       </main>
 
-      {/* Edit Product Modal (Full-screen Sheet on mobile, Dialog on desktop) */}
+      {/* Edit Product Modal */}
       {product && (
         <ProductFormModal
           open={isEditDialogOpen}
@@ -601,7 +453,7 @@ export default function ProductDetailPage() {
                 {tDetail("deleteConfirmTitle")}
               </DialogTitle>
             </div>
-            <DialogDescription className="text-xs text-start">
+            <DialogDescription className="text-xs text-start leading-relaxed">
               {tDetail("deleteConfirmDescription")}
             </DialogDescription>
           </DialogHeader>
@@ -625,48 +477,6 @@ export default function ProductDetailPage() {
               className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
             >
               {tDetail("delete")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Regenerate Link Confirmation Dialog */}
-      <Dialog
-        open={isRegenerateDialogOpen}
-        onOpenChange={setIsRegenerateDialogOpen}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <div className="flex items-center gap-2 text-warning mb-1 text-start">
-              <AlertTriangle className="h-5 w-5" />
-              <DialogTitle className="text-base">
-                {tDetail("regenerateConfirmTitle")}
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-xs text-start leading-relaxed">
-              {tDetail("regenerateConfirmDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsRegenerateDialogOpen(false)}
-              disabled={isRegenerating}
-              className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
-            >
-              {tCommon("cancel")}
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              size="sm"
-              onClick={handleRegenerateLink}
-              isLoading={isRegenerating}
-              className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
-            >
-              {tDetail("regenerateConfirmAction")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -22,9 +22,7 @@ export default async function middleware(request: NextRequest) {
   const locale = localeMatch ? localeMatch[1] : routing.defaultLocale;
   const pathWithoutLocale = localeMatch ? localeMatch[2] || "/" : pathname;
 
-  const isPublicRoute =
-    pathWithoutLocale === "/login" ||
-    pathWithoutLocale.startsWith("/p/");
+  const isPublicRoute = pathWithoutLocale === "/login";
 
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const user = token ? await verifySessionToken(token) : null;

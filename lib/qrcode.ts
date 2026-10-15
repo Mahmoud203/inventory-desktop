@@ -15,3 +15,16 @@ export async function generateQrDataUrl(text: string): Promise<string> {
     throw err;
   }
 }
+
+export function encodeProductQrPayload(product: {
+  id: string;
+  name: string;
+  notes?: string | null;
+}): string {
+  return JSON.stringify({
+    v: 1,
+    id: product.id,
+    name: product.name,
+    notes: product.notes || "",
+  });
+}

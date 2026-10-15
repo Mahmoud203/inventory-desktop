@@ -48,7 +48,6 @@ function runMigrations(db: Database.Database) {
       photo_path TEXT,
       has_qr INTEGER DEFAULT 0,
       qr_data TEXT,
-      share_token TEXT UNIQUE,
       created_at TEXT NOT NULL
     );
 
