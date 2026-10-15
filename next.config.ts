@@ -5,6 +5,7 @@ const withNextIntl = createNextIntlPlugin();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  serverExternalPackages: ["better-sqlite3"],
 };
 
 export default withNextIntl(nextConfig);
