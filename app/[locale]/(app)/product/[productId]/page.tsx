@@ -10,6 +10,13 @@ import {
   Download,
   AlertTriangle,
   ImageIcon,
+  MinusCircle,
+  PlusCircle,
+  Minus,
+  Plus,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { getSession, getUser } from "@/lib/auth/local";
@@ -17,6 +24,7 @@ import {
   get as getProduct,
   remove as removeProduct,
 } from "@/lib/data/products";
+import { listByProduct, type TransactionRecord } from "@/lib/data/transactions";
 import { record as recordRecentlyViewed } from "@/lib/data/recently-viewed";
 import { generateQrDataUrl } from "@/lib/qrcode";
 import { TopNav } from "@/components/TopNav";
@@ -39,8 +47,10 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductFormModal } from "@/components/ProductFormModal";
+import { QuantityAdjustDialog } from "@/components/QuantityAdjustDialog";
 import type { InitialProductData } from "@/components/ProductForm";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface ProductDetailData {
   id: string;
@@ -51,6 +61,7 @@ interface ProductDetailData {
   photo_path?: string | null;
   has_qr: boolean;
   qr_data: string | null;
+  quantity: number;
   created_at: string;
   stores?: {
     id: string;
@@ -65,6 +76,7 @@ interface ProductDetailData {
 
 export default function ProductDetailPage() {
   const tDetail = useTranslations("productDetail");
+  const tQuantity = useTranslations("quantity");
   const tNav = useTranslations("nav");
   const tCommon = useTranslations("common");
 
@@ -78,6 +90,10 @@ export default function ProductDetailPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
+
+  // Quantity adjust modal state
+  const [adjustType, setAdjustType] = React.useState<"withdraw" | "add" | null>(null);
+  const [showAllTransactions, setShowAllTransactions] = React.useState(false);
 
   // Protected route check
   React.useEffect(() => {
@@ -119,6 +135,25 @@ export default function ProductDetailPage() {
   } = useSWR(productId ? `product-${productId}` : null, fetchProduct, {
     revalidateOnFocus: true,
   });
+
+  // Fetch Product Transactions
+  const fetchTransactions = async (): Promise<TransactionRecord[]> => {
+    const {
+      data: { user },
+    } = await getUser();
+    if (!user) return [];
+    return listByProduct(productId, user.id);
+  };
+
+  const {
+    data: transactions,
+    mutate: mutateTransactions,
+    isLoading: isTransactionsLoading,
+  } = useSWR(
+    productId ? `transactions-${productId}` : null,
+    fetchTransactions,
+    { revalidateOnFocus: true }
+  );
 
   // Handle unauthorized error
   React.useEffect(() => {
@@ -241,6 +276,17 @@ export default function ProductDetailPage() {
     }
   };
 
+  const formatDateTime = (isoString: string) => {
+    try {
+      return new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(isoString));
+    } catch {
+      return isoString;
+    }
+  };
+
   const initialProductData: InitialProductData | null = product
     ? {
         id: product.id,
@@ -252,6 +298,16 @@ export default function ProductDetailPage() {
         qr_data: product.qr_data,
       }
     : null;
+
+  const currentQuantity = product?.quantity ?? 0;
+  const isOutOfStock = currentQuantity === 0;
+  const isLowStock = currentQuantity > 0 && currentQuantity <= 5;
+
+  const displayedTransactions = transactions
+    ? showAllTransactions
+      ? transactions
+      : transactions.slice(0, 20)
+    : [];
 
   return (
     <div className="min-h-screen bg-bg text-foreground">
@@ -319,7 +375,7 @@ export default function ProductDetailPage() {
 
         {/* Product Content */}
         {!isLoading && product && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             {/* 1. Large Photo Display */}
             {product.photo_url ? (
               <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-96 rounded-xl overflow-hidden border border-border bg-surface-raised shadow-soft">
@@ -372,7 +428,171 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* 3. Notes Section */}
+            {/* 3. Prominent QUANTITY Block */}
+            <div className="rounded-xl border border-border bg-surface p-6 shadow-soft space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-start">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "text-4xl sm:text-5xl font-semibold tracking-tight",
+                        (isOutOfStock || isLowStock) ? "text-danger" : "text-foreground"
+                      )}
+                    >
+                      {currentQuantity.toLocaleString(locale)}
+                    </span>
+                    {(isOutOfStock || isLowStock) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-danger/10 text-danger border border-danger/20">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        {isOutOfStock ? tQuantity("outOfStock") : tQuantity("lowStock")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted mt-1 font-medium">
+                    {tQuantity("label")}
+                  </p>
+                </div>
+
+                {/* Withdraw & Add Buttons */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => setAdjustType("withdraw")}
+                    disabled={currentQuantity <= 0}
+                    className="bg-danger text-danger-foreground hover:bg-danger-hover min-h-[44px] sm:min-h-10 px-5 gap-2 font-medium shadow-soft"
+                  >
+                    <Minus className="h-4 w-4" />
+                    <span>{tQuantity("withdraw")}</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => setAdjustType("add")}
+                    className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white min-h-[44px] sm:min-h-10 px-5 gap-2 font-medium shadow-soft"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>{tQuantity("add")}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Transaction History (سجل الحركات) */}
+            <div className="rounded-xl border border-border bg-surface p-6 shadow-soft space-y-4">
+              <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                <div className="flex items-center gap-2 text-start">
+                  <History className="h-4 w-4 text-muted" />
+                  <h2 className="text-base font-semibold text-foreground">
+                    {tQuantity("history")}
+                  </h2>
+                </div>
+                {transactions && transactions.length > 0 && (
+                  <span className="text-xs text-muted">
+                    {transactions.length.toLocaleString(locale)}
+                  </span>
+                )}
+              </div>
+
+              {/* Transactions List */}
+              {isTransactionsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                </div>
+              ) : !transactions || transactions.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted">
+                  {tQuantity("noTransactions")}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="divide-y divide-border/40">
+                    {displayedTransactions.map((tx) => {
+                      const isTxWithdraw = tx.type === "withdraw";
+                      return (
+                        <div
+                          key={tx.id}
+                          className="py-3 flex items-start justify-between gap-3 text-start hover:bg-surface-raised/40 px-2 rounded-md transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={cn(
+                                "p-2 rounded-full shrink-0 mt-0.5",
+                                isTxWithdraw
+                                  ? "bg-danger/10 text-danger"
+                                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              )}
+                            >
+                              {isTxWithdraw ? (
+                                <MinusCircle className="h-4 w-4" />
+                              ) : (
+                                <PlusCircle className="h-4 w-4" />
+                              )}
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-foreground">
+                                {tx.unit_name}
+                              </p>
+                              <p className="text-xs text-muted">
+                                {formatDateTime(tx.created_at)}
+                              </p>
+                              {tx.note && (
+                                <p className="text-xs text-muted-foreground pt-0.5 italic">
+                                  {tx.note}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-end shrink-0">
+                            <span
+                              className={cn(
+                                "text-sm font-semibold tabular-nums",
+                                isTxWithdraw ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
+                              )}
+                            >
+                              {isTxWithdraw ? `-${tx.quantity}` : `+${tx.quantity}`}
+                            </span>
+                            <p className="text-[11px] text-muted">
+                              {tx.quantity_after} {tQuantity("remaining")}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Show all / Show less toggle button if > 20 */}
+                  {transactions.length > 20 && (
+                    <div className="pt-2 text-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowAllTransactions(!showAllTransactions)}
+                        className="gap-1.5 text-xs text-muted hover:text-foreground"
+                      >
+                        {showAllTransactions ? (
+                          <>
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            <span>{tCommon("close")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                            <span>
+                              {tQuantity("showAll")} ({transactions.length})
+                            </span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 5. Notes Section */}
             <div className="space-y-2 text-start">
               <h2 className="text-xs uppercase font-semibold text-muted tracking-wider">
                 {tDetail("notesHeading")}
@@ -382,7 +602,7 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* 4. QR Code Card (max-w-xs on mobile, max-w-md on desktop) */}
+            {/* 6. QR Code Card */}
             {product.has_qr && (
               <div className="pt-4">
                 <div className="w-full max-w-xs sm:max-w-md mx-auto rounded-xl border border-border bg-surface p-4 sm:p-6 shadow-soft text-center space-y-4">
@@ -431,6 +651,24 @@ export default function ProductDetailPage() {
           </div>
         )}
       </main>
+
+      {/* Quantity Adjust Modal (Withdraw / Add) */}
+      {product && adjustType && (
+        <QuantityAdjustDialog
+          open={adjustType !== null}
+          onOpenChange={(open) => !open && setAdjustType(null)}
+          product={{
+            id: product.id,
+            name: product.name,
+            quantity: product.quantity,
+          }}
+          type={adjustType}
+          onSuccess={() => {
+            mutate();
+            mutateTransactions();
+          }}
+        />
+      )}
 
       {/* Edit Product Modal */}
       {product && (

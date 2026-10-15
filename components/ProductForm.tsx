@@ -55,6 +55,7 @@ export function ProductForm({
   onCancel,
 }: ProductFormProps) {
   const t = useTranslations("productForm");
+  const tQuantity = useTranslations("quantity");
   const tCommon = useTranslations("common");
   const params = useParams();
   const locale = (params?.locale as string) || "en";
@@ -65,6 +66,7 @@ export function ProductForm({
   const [name, setName] = React.useState(initialProduct?.name || "");
   const [notes, setNotes] = React.useState(initialProduct?.notes || "");
   const [hasQr, setHasQr] = React.useState(initialProduct?.has_qr ?? false);
+  const [initialQuantity, setInitialQuantity] = React.useState("0");
 
   // Photo Upload State
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -99,9 +101,10 @@ export function ProductForm({
       name.trim().length > 0 ||
       notes.trim().length > 0 ||
       hasQr ||
-      photoFile !== null
+      photoFile !== null ||
+      parseInt(initialQuantity, 10) > 0
     );
-  }, [name, notes, hasQr, photoFile, isPhotoRemoved, initialProduct]);
+  }, [name, notes, hasQr, photoFile, isPhotoRemoved, initialProduct, initialQuantity]);
 
   // Clean up object URL preview on unmount
   React.useEffect(() => {
@@ -261,6 +264,8 @@ export function ProductForm({
           });
         }
 
+        const parsedInitialQty = Math.max(0, parseInt(initialQuantity, 10) || 0);
+
         await createProduct(
           {
             id: productId,
@@ -270,6 +275,8 @@ export function ProductForm({
             photo_path: finalPhotoPath,
             has_qr: hasQr,
             qr_data: qrData,
+            quantity: parsedInitialQty,
+            initial_unit_name: tQuantity("openingBalance"),
           },
           user.id
         );
@@ -402,6 +409,23 @@ export function ProductForm({
             <p className="text-xs text-danger text-start">{nameError}</p>
           )}
         </div>
+
+        {/* Initial Quantity Field (only shown when creating a new product) */}
+        {!initialProduct && (
+          <div className="space-y-1.5 text-start">
+            <Label htmlFor="initial-quantity">{tQuantity("initialQuantity")}</Label>
+            <Input
+              id="initial-quantity"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0"
+              value={initialQuantity}
+              onChange={(e) => setInitialQuantity(e.target.value)}
+              disabled={isSaving}
+            />
+          </div>
+        )}
 
         {/* 3. Notes Textarea with Character Counter */}
         <div className="space-y-1.5">
