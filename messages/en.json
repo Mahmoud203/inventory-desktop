@@ -26,6 +26,7 @@
   "nav": {
     "searchPlaceholder": "Search bays, stores, SKUs...",
     "sections": "Sections",
+    "reports": "Reports",
     "logout": "Sign Out"
   },
   "search": {
@@ -208,5 +209,50 @@
     "description": "An unexpected error occurred while processing your request.",
     "retry": "Try again",
     "backHome": "Back to Sections"
+  },
+  "quantity": {
+    "label": "Current Quantity",
+    "withdraw": "Withdraw",
+    "add": "Add Stock",
+    "initialQuantity": "Initial quantity",
+    "remaining": "Remaining after withdrawal",
+    "insufficient": "Requested quantity exceeds available stock",
+    "history": "Transaction History",
+    "noTransactions": "No transactions yet",
+    "showAll": "Show all",
+    "unitName": "Unit name",
+    "quantityLabel": "Quantity",
+    "note": "Note (optional)",
+    "save": "Save",
+    "cancel": "Cancel",
+    "successWithdraw": "Withdrawal recorded successfully",
+    "successAdd": "Addition recorded successfully",
+    "openingBalance": "Opening balance",
+    "outOfStock": "Out of stock",
+    "lowStock": "Low stock"
+  },
+  "reports": {
+    "title": "Reports",
+    "fromDate": "From date",
+    "toDate": "To date",
+    "last7days": "Last 7 days",
+    "last30days": "Last 30 days",
+    "today": "Today",
+    "allTypes": "All transactions",
+    "withdrawOnly": "Withdrawals only",
+    "addOnly": "Additions only",
+    "search": "Search",
+    "itemName": "Item name",
+    "totalWithdrawn": "Total withdrawn",
+    "totalAdded": "Total added",
+    "remaining": "Remaining quantity",
+    "transactions": "Transactions",
+    "type": "Type",
+    "date": "Date",
+    "noResults": "No transactions in this period",
+    "totalItems": "Items affected",
+    "exportExcel": "Export to Excel",
+    "summary": "Summary",
+    "details": "Details"
   }
 }

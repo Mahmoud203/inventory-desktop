@@ -26,6 +26,7 @@
   "nav": {
     "searchPlaceholder": "بحث في الأقسام، المخازن، والمنتجات...",
     "sections": "الأقسام",
+    "reports": "التقارير",
     "logout": "تسجيل الخروج"
   },
   "search": {
@@ -208,5 +209,50 @@
     "description": "واجه النظام مشكلة أثناء معالجة طلبك. يرجى المحاولة مرة أخرى.",
     "retry": "إعادة المحاولة",
     "backHome": "العودة إلى الأقسام"
+  },
+  "quantity": {
+    "label": "الكمية الحالية",
+    "withdraw": "صرف",
+    "add": "إضافة إلى المخزون",
+    "initialQuantity": "الكمية الابتدائية",
+    "remaining": "المتبقي بعد الصرف",
+    "insufficient": "الكمية المطلوبة أكبر من المتاح",
+    "history": "سجل الحركات",
+    "noTransactions": "لا توجد حركات بعد",
+    "showAll": "عرض الكل",
+    "unitName": "اسم الوحدة",
+    "quantityLabel": "الكمية",
+    "note": "ملاحظة (اختياري)",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "successWithdraw": "تم تسجيل حركة الصرف بنجاح",
+    "successAdd": "تم تسجيل حركة الإضافة بنجاح",
+    "openingBalance": "رصيد افتتاحي",
+    "outOfStock": "نفذ المخزون",
+    "lowStock": "مخزون منخفض"
+  },
+  "reports": {
+    "title": "التقارير",
+    "fromDate": "من تاريخ",
+    "toDate": "إلى تاريخ",
+    "last7days": "آخر أسبوع",
+    "last30days": "آخر شهر",
+    "today": "اليوم",
+    "allTypes": "كافة الحركات",
+    "withdrawOnly": "حركات الصرف فقط",
+    "addOnly": "حركات الإضافة فقط",
+    "search": "بحث",
+    "itemName": "اسم الصنف",
+    "totalWithdrawn": "إجمالي المصروف",
+    "totalAdded": "إجمالي المضاف",
+    "remaining": "الكمية المتبقية",
+    "transactions": "الحركات",
+    "type": "النوع",
+    "date": "التاريخ",
+    "noResults": "لا توجد حركات في هذه الفترة",
+    "totalItems": "الأصناف المتأثرة",
+    "exportExcel": "تصدير إلى Excel",
+    "summary": "الملخص",
+    "details": "التفاصيل"
   }
 }
