@@ -4,14 +4,13 @@ import path from "path";
 
 export function getDataDir(): string {
   const dir = process.env.ELECTRON_DATA_DIR || path.join(process.cwd(), "data");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(/*turbopackIgnore: true*/ dir)) {
+    fs.mkdirSync(/*turbopackIgnore: true*/ dir, { recursive: true });
   }
   return dir;
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __dbInstance: Database.Database | undefined;
 }
 

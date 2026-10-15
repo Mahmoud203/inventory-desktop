@@ -27,7 +27,7 @@ export interface ProductRecord {
   };
 }
 
-export function deletePhotoFile(photoPath: string | null | undefined): void {
+function deletePhotoFile(photoPath: string | null | undefined): void {
   if (!photoPath || typeof photoPath !== "string") return;
   const cleanPath = photoPath
     .replace(/^\/?api\/photos\//, "")

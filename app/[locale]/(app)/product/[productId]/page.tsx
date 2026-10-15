@@ -151,7 +151,11 @@ export default function ProductDetailPage() {
           console.error("Failed to generate QR Code data URL:", err);
         });
     } else {
-      setQrDataUrl(null);
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setQrDataUrl(null);
+        }
+      });
     }
 
     return () => {
