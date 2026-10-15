@@ -4,6 +4,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { getDb, getDataDir } from "@/lib/db";
+import type { TransactionRecord } from "./transactions";
 
 export interface ProductRecord {
   id: string;
@@ -15,6 +16,7 @@ export interface ProductRecord {
   photo_url: string | null;
   has_qr: boolean;
   qr_data: string | null;
+  quantity: number;
   created_at: string;
   stores?: {
     id: string;
@@ -64,6 +66,7 @@ export async function list(
       photo_path,
       has_qr,
       qr_data,
+      quantity,
       created_at
     FROM products
     WHERE user_id = ?
@@ -86,6 +89,7 @@ export async function list(
     photo_path: string | null;
     has_qr: number;
     qr_data: string | null;
+    quantity: number;
     created_at: string;
   }[];
 
@@ -99,6 +103,7 @@ export async function list(
     photo_url: row.photo_path ? `/api/photos/${row.photo_path}` : null,
     has_qr: Boolean(row.has_qr),
     qr_data: row.qr_data,
+    quantity: row.quantity ?? 0,
     created_at: row.created_at,
   }));
 }
@@ -120,6 +125,7 @@ export async function get(
         p.photo_path,
         p.has_qr,
         p.qr_data,
+        p.quantity,
         p.created_at,
         st.id AS store_id_val,
         st.name AS store_name,
@@ -142,6 +148,7 @@ export async function get(
         photo_path: string | null;
         has_qr: number;
         qr_data: string | null;
+        quantity: number;
         created_at: string;
         store_id_val: string | null;
         store_name: string | null;
@@ -163,6 +170,7 @@ export async function get(
     photo_url: row.photo_path ? `/api/photos/${row.photo_path}` : null,
     has_qr: Boolean(row.has_qr),
     qr_data: row.qr_data,
+    quantity: row.quantity ?? 0,
     created_at: row.created_at,
     stores: row.store_id_val
       ? {
@@ -190,6 +198,8 @@ export async function create(
     photo_url?: string | null;
     has_qr?: boolean;
     qr_data?: string | null;
+    quantity?: number;
+    initial_unit_name?: string;
   },
   userId: string
 ): Promise<ProductRecord> {
@@ -197,35 +207,181 @@ export async function create(
   const id = data.id || crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const photoPath = cleanPhotoPath(data.photo_path || data.photo_url);
+  const initialQty = Math.max(0, Math.floor(Number(data.quantity || 0)));
 
-  db.prepare(
+  const insertProduct = db.transaction(() => {
+    db.prepare(
+      `
+      INSERT INTO products (
+        id,
+        store_id,
+        user_id,
+        name,
+        notes,
+        photo_path,
+        has_qr,
+        qr_data,
+        quantity,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-    INSERT INTO products (
+    ).run(
       id,
-      store_id,
-      user_id,
-      name,
-      notes,
-      photo_path,
-      has_qr,
-      qr_data,
-      created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `
-  ).run(
-    id,
-    data.store_id,
-    userId,
-    data.name.trim(),
-    data.notes?.trim() || null,
-    photoPath,
-    data.has_qr ? 1 : 0,
-    data.qr_data || null,
-    createdAt
-  );
+      data.store_id,
+      userId,
+      data.name.trim(),
+      data.notes?.trim() || null,
+      photoPath,
+      data.has_qr ? 1 : 0,
+      data.qr_data || null,
+      initialQty,
+      createdAt
+    );
+
+    if (initialQty > 0) {
+      const transId = crypto.randomUUID();
+      const unitName =
+        data.initial_unit_name && data.initial_unit_name.trim()
+          ? data.initial_unit_name.trim()
+          : "رصيد افتتاحي / Opening balance";
+
+      db.prepare(
+        `
+        INSERT INTO transactions (
+          id,
+          product_id,
+          user_id,
+          type,
+          unit_name,
+          quantity,
+          quantity_before,
+          quantity_after,
+          note,
+          created_at
+        ) VALUES (?, ?, ?, 'add', ?, ?, 0, ?, NULL, ?)
+      `
+      ).run(
+        transId,
+        id,
+        userId,
+        unitName,
+        initialQty,
+        initialQty,
+        createdAt
+      );
+    }
+  });
+
+  insertProduct();
 
   const product = await get(id, userId);
   return product!;
+}
+
+export async function adjustQuantity(
+  productId: string,
+  userId: string,
+  data: {
+    type: "withdraw" | "add";
+    unitName: string;
+    quantity: number;
+    note?: string | null;
+  }
+): Promise<{
+  product?: ProductRecord;
+  transaction?: TransactionRecord;
+  error?: string;
+}> {
+  const db = getDb();
+  const qty = Math.floor(Number(data.quantity));
+
+  if (isNaN(qty) || qty <= 0) {
+    return { error: "Quantity must be greater than 0" };
+  }
+
+  if (!data.unitName || !data.unitName.trim()) {
+    return { error: "Unit name is required" };
+  }
+
+  let resultTx: TransactionRecord | undefined;
+
+  try {
+    const runAdjust = db.transaction(() => {
+      const prod = db
+        .prepare("SELECT id, quantity FROM products WHERE id = ? AND user_id = ?")
+        .get(productId, userId) as { id: string; quantity: number } | undefined;
+
+      if (!prod) {
+        throw new Error("Product not found");
+      }
+
+      const currentQty = prod.quantity ?? 0;
+
+      if (data.type === "withdraw" && qty > currentQty) {
+        throw new Error(`Insufficient stock. Available: ${currentQty}`);
+      }
+
+      const qtyBefore = currentQty;
+      const qtyAfter = data.type === "add" ? currentQty + qty : currentQty - qty;
+
+      db.prepare("UPDATE products SET quantity = ? WHERE id = ? AND user_id = ?").run(
+        qtyAfter,
+        productId,
+        userId
+      );
+
+      const transId = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
+
+      db.prepare(
+        `
+        INSERT INTO transactions (
+          id,
+          product_id,
+          user_id,
+          type,
+          unit_name,
+          quantity,
+          quantity_before,
+          quantity_after,
+          note,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+      ).run(
+        transId,
+        productId,
+        userId,
+        data.type,
+        data.unitName.trim(),
+        qty,
+        qtyBefore,
+        qtyAfter,
+        data.note?.trim() || null,
+        createdAt
+      );
+
+      resultTx = {
+        id: transId,
+        product_id: productId,
+        user_id: userId,
+        type: data.type,
+        unit_name: data.unitName.trim(),
+        quantity: qty,
+        quantity_before: qtyBefore,
+        quantity_after: qtyAfter,
+        note: data.note?.trim() || null,
+        created_at: createdAt,
+      };
+    });
+
+    runAdjust();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to adjust quantity" };
+  }
+
+  const updatedProduct = await get(productId, userId);
+  return { product: updatedProduct || undefined, transaction: resultTx };
 }
 
 export async function update(
@@ -332,6 +488,7 @@ export async function search(
         p.id,
         p.name,
         p.photo_path,
+        p.quantity,
         p.store_id,
         st.id AS store_id_val,
         st.name AS store_name,
@@ -349,6 +506,7 @@ export async function search(
     id: string;
     name: string;
     photo_path: string | null;
+    quantity: number;
     store_id: string;
     store_id_val: string | null;
     store_name: string | null;
@@ -367,6 +525,7 @@ export async function search(
     notes: null,
     has_qr: false,
     qr_data: null,
+    quantity: row.quantity ?? 0,
     created_at: "",
     stores: row.store_id_val
       ? {
