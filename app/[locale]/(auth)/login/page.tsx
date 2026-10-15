@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
+import { signIn, signUp } from "@/lib/auth/local";
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,6 @@ export default function LoginPage() {
   const params = useParams();
   const locale = (params?.locale as string) || "en";
   const router = useRouter();
-  const supabase = createClient();
 
   const [activeTab, setActiveTab] = React.useState<string>("login");
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
@@ -70,7 +69,7 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await signIn({
         email: loginEmail.trim(),
         password: loginPassword,
       });
@@ -135,14 +134,9 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await signUp({
         email: signupEmail.trim(),
         password: signupPassword,
-        options: {
-          data: {
-            name: signupName.trim(),
-          },
-        },
       });
 
       if (error) {

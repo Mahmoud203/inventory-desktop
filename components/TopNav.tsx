@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
-import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth/local";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LocaleSwitcher } from "@/components/ui/locale-switcher";
@@ -16,11 +16,10 @@ export function TopNav({ currentLocale }: { currentLocale: string }) {
   const tNav = useTranslations("nav");
   const tCommon = useTranslations("common");
   const router = useRouter();
-  const supabase = createClient();
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOut();
       toast.success(tNav("logout"));
       router.push("/login");
       router.refresh();

@@ -4,6 +4,7 @@ import * as React from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+import { getUser } from "@/lib/auth/local";
 import {
   Search,
   ChevronRight,
@@ -65,7 +66,7 @@ export function SearchBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
       try {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getUser();
 
         if (!user || !isCurrent) return;
 

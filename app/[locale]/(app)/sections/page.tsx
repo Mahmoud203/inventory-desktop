@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { Plus, ChevronRight, PackageOpen, LayoutGrid, MoreHorizontal } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+import { getSession, getUser } from "@/lib/auth/local";
 import { TopNav } from "@/components/TopNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,20 +75,20 @@ export default function SectionsPage() {
     const verifySession = async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await getSession();
       if (!session) {
         router.replace("/login");
       }
     };
     verifySession();
-  }, [router, supabase]);
+  }, [router]);
 
   // SWR Fetcher
   const fetchSections = async (): Promise<SectionWithCount[]> => {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await getUser();
 
     if (userError || !user) {
       throw new Error("UNAUTHORIZED");
@@ -156,7 +157,7 @@ export default function SectionsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUser();
 
       if (!user) {
         router.replace("/login");

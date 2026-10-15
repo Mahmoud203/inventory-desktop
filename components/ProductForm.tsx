@@ -4,6 +4,7 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { getUser } from "@/lib/auth/local";
 import {
   UploadCloud,
   X,
@@ -183,7 +184,7 @@ export function ProductForm({
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } = await getUser();
 
       if (userError || !user) {
         throw new Error("UNAUTHORIZED");

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+import { getSession, getUser } from "@/lib/auth/local";
 import { generateQrDataUrl } from "@/lib/qrcode";
 import { TopNav } from "@/components/TopNav";
 import { Button } from "@/components/ui/button";
@@ -85,20 +86,20 @@ export default function ProductDetailPage() {
     const verifySession = async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await getSession();
       if (!session) {
         router.replace("/login");
       }
     };
     verifySession();
-  }, [router, supabase]);
+  }, [router]);
 
   // Fetch Product Details with store and section
   const fetchProduct = async (): Promise<ProductDetailData> => {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await getUser();
 
     if (userError || !user) {
       throw new Error("UNAUTHORIZED");
@@ -229,7 +230,7 @@ export default function ProductDetailPage() {
       try {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getUser();
         if (!user) return;
 
         // Upsert into recently_viewed

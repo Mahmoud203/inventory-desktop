@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { Clock, ImageIcon } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+import { getSession } from "@/lib/auth/local";
 import { cn } from "@/lib/utils";
 
 interface ProductRecord {
@@ -38,7 +39,7 @@ export function RecentlyViewedBar() {
   const fetchRecentlyViewed = async (): Promise<RecentlyViewedItem[]> => {
     const {
       data: { session },
-    } = await supabase.auth.getSession();
+    } = await getSession();
     if (!session?.user) {
       return [];
     }

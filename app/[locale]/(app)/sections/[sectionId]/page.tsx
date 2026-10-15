@@ -7,6 +7,7 @@ import useSWR, { mutate as globalMutate } from "swr";
 import { Plus, ChevronRight, Store, Warehouse, MoreHorizontal, Trash2 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+import { getSession, getUser } from "@/lib/auth/local";
 import { TopNav } from "@/components/TopNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,13 +95,13 @@ export default function SectionDetailsPage() {
     const verifySession = async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await getSession();
       if (!session) {
         router.replace("/login");
       }
     };
     verifySession();
-  }, [router, supabase]);
+  }, [router]);
 
   // Fetch Section Info (for Breadcrumb & Header)
   const fetchSection = async (): Promise<SectionInfo> => {
@@ -127,7 +128,7 @@ export default function SectionDetailsPage() {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await getUser();
 
     if (userError || !user) {
       throw new Error("UNAUTHORIZED");
@@ -189,7 +190,7 @@ export default function SectionDetailsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUser();
 
       if (!user) {
         router.replace("/login");
