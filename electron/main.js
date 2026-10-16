@@ -76,10 +76,10 @@ function waitForServer(url, timeoutMs = 30000) {
 
 function getStandaloneServerPath() {
   const candidates = [
-    path.join(__dirname, "..", ".next", "standalone", "server.js"),
-    path.join(process.resourcesPath, "app.asar.unpacked", ".next", "standalone", "server.js"),
+    path.join(process.resourcesPath, "app", "server.js"),
     path.join(process.resourcesPath, "app", ".next", "standalone", "server.js"),
-    path.join(process.resourcesPath, ".next", "standalone", "server.js"),
+    path.join(process.resourcesPath, "app.asar.unpacked", ".next", "standalone", "server.js"),
+    path.join(__dirname, "..", ".next", "standalone", "server.js"),
   ];
 
   for (const candidate of candidates) {
@@ -87,33 +87,37 @@ function getStandaloneServerPath() {
       return candidate;
     }
   }
-  return candidates[0];
+  return path.join(process.resourcesPath, "app", "server.js");
 }
 
 function startStandaloneServer() {
-  const serverPath = getStandaloneServerPath();
+  const serverPath = path.join(process.resourcesPath, "app", "server.js");
+  const resolvedPath = fs.existsSync(serverPath)
+    ? serverPath
+    : getStandaloneServerPath();
+  const serverDir = path.dirname(resolvedPath);
 
-  const serverDir = path.dirname(serverPath);
+  const asarNodeModules = path.join(process.resourcesPath, "app.asar", "node_modules");
+  const localNodeModules = path.join(serverDir, "node_modules");
+  const nodePath = [localNodeModules, asarNodeModules].join(path.delimiter);
 
-  serverProcess = child_process.spawn(process.execPath, [serverPath], {
+  serverProcess = child_process.spawn(process.execPath, [resolvedPath], {
     cwd: serverDir,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       PORT: "3000",
-      ELECTRON_DATA_DIR: dataDir,
+      HOSTNAME: "0.0.0.0",
+      ELECTRON_DATA_DIR: path.join(app.getPath("userData"), "data"),
       NODE_ENV: "production",
+      NODE_PATH: nodePath,
     },
     windowsHide: true,
-    stdio: "pipe",
+    stdio: "inherit",
   });
 
-  serverProcess.stdout.on("data", (d) => {
-    console.log(`[Next.js Server]: ${d}`);
-  });
-
-  serverProcess.stderr.on("data", (d) => {
-    console.error(`[Next.js Server Error]: ${d}`);
+  serverProcess.on("error", (err) => {
+    console.error("Failed to start Next.js server:", err);
   });
 
   serverProcess.on("close", (code) => {
