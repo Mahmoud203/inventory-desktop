@@ -52,7 +52,16 @@ async function main() {
     process.exit(1);
   }
 
-  // 1. Resolve any symlinks inside .next/standalone (e.g. better-sqlite3 symlink created on Windows)
+  // 1. Clean up extraneous folders (e.g. dist-electron or data copied by Next.js standalone tracing)
+  for (const unwanted of ["dist-electron", "data"]) {
+    const p = path.join(standaloneDir, unwanted);
+    if (fs.existsSync(p)) {
+      console.log(`Cleaning up unwanted folder: ${p}`);
+      fs.rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // 2. Resolve any symlinks inside .next/standalone (e.g. better-sqlite3 symlink created on Windows)
   console.log("Resolving symlinks in .next/standalone...");
   resolveSymlinksInDir(standaloneDir);
 
