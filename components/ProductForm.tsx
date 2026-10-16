@@ -14,6 +14,7 @@ import {
   QrCode,
   AlertTriangle,
 } from "lucide-react";
+import { formatProductQrPayload } from "@/lib/qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -230,11 +231,9 @@ export function ProductForm({
         // UPDATE existing product
         let qrData: string | null = null;
         if (hasQr) {
-          qrData = JSON.stringify({
-            v: 1,
-            id: initialProduct.id,
+          qrData = formatProductQrPayload({
             name: name.trim(),
-            notes: notes.trim(),
+            notes: notes.trim() || null,
           });
         }
 
@@ -254,17 +253,15 @@ export function ProductForm({
       } else {
         // CREATE new product
         const productId = crypto.randomUUID();
+        const parsedInitialQty = Math.max(0, parseInt(initialQuantity, 10) || 0);
         let qrData: string | null = null;
         if (hasQr) {
-          qrData = JSON.stringify({
-            v: 1,
-            id: productId,
+          qrData = formatProductQrPayload({
             name: name.trim(),
-            notes: notes.trim(),
+            notes: notes.trim() || null,
+            quantity: parsedInitialQty,
           });
         }
-
-        const parsedInitialQty = Math.max(0, parseInt(initialQuantity, 10) || 0);
 
         await createProduct(
           {

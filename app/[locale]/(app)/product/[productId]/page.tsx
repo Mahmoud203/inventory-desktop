@@ -17,6 +17,8 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Eye,
 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { getSession, getUser } from "@/lib/auth/local";
@@ -26,9 +28,14 @@ import {
 } from "@/lib/data/products";
 import { listByProduct, type TransactionRecord } from "@/lib/data/transactions";
 import { record as recordRecentlyViewed } from "@/lib/data/recently-viewed";
-import { generateQrDataUrl } from "@/lib/qrcode";
+import { generateQrDataUrl, formatProductQrPayload } from "@/lib/qrcode";
 import { TopNav } from "@/components/TopNav";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -162,21 +169,24 @@ export default function ProductDetailPage() {
     }
   }, [productError, router]);
 
+  // Build plain-text QR payload matching phone card format
+  const qrPayloadText = React.useMemo(() => {
+    if (!product) return "";
+    return formatProductQrPayload({
+      name: product.name,
+      notes: product.notes,
+      quantity: product.quantity,
+      storeName: product.stores?.name,
+      sectionName: product.stores?.sections?.name,
+    });
+  }, [product]);
+
   // Generate QR Code data URL when product loads with has_qr
   React.useEffect(() => {
     let isCancelled = false;
 
-    if (product?.has_qr) {
-      const targetPayload =
-        product.qr_data ||
-        JSON.stringify({
-          v: 1,
-          id: product.id,
-          name: product.name,
-          notes: product.notes || "",
-        });
-
-      generateQrDataUrl(targetPayload)
+    if (product?.has_qr && qrPayloadText) {
+      generateQrDataUrl(qrPayloadText)
         .then((url) => {
           if (!isCancelled) {
             setQrDataUrl(url);
@@ -196,13 +206,7 @@ export default function ProductDetailPage() {
     return () => {
       isCancelled = true;
     };
-  }, [
-    product?.has_qr,
-    product?.qr_data,
-    product?.id,
-    product?.name,
-    product?.notes,
-  ]);
+  }, [product?.has_qr, qrPayloadText]);
 
   // Record Recently Viewed on Mount
   React.useEffect(() => {
@@ -226,6 +230,28 @@ export default function ProductDetailPage() {
 
     recordRecently();
   }, [productId]);
+
+  const handleCopyDetails = async () => {
+    if (!qrPayloadText) return;
+    try {
+      await navigator.clipboard.writeText(qrPayloadText);
+      toast.success(tDetail("detailsCopied"));
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = qrPayloadText;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        toast.success(tDetail("detailsCopied"));
+      } catch {
+        toast.error("Failed to copy details");
+      }
+    }
+  };
 
   const handleDownloadQr = () => {
     if (!qrDataUrl || !product) return;
@@ -628,20 +654,68 @@ export default function ProductDetailPage() {
                     )}
                   </div>
 
-                  {/* Caption under the QR */}
-                  <p className="text-xs text-muted leading-relaxed">
-                    {tDetail("qrCaption")}
-                  </p>
+                  {/* Caption & Muted Hint directly below the QR */}
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">
+                      {tDetail("qrCaption")}
+                    </p>
+                    <p className="text-xs text-muted max-w-sm mx-auto leading-relaxed">
+                      {tDetail("qrHint")}
+                    </p>
+                  </div>
 
-                  {/* Action button: Download QR */}
-                  <div className="flex items-center justify-center pt-1">
+                  {/* Action buttons: Copy details, Preview, Download QR */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyDetails}
+                      className="gap-2 text-xs font-medium text-muted-foreground hover:text-foreground min-h-[38px] sm:min-h-9 transition-colors duration-150"
+                    >
+                      <Copy className="h-4 w-4" strokeWidth={1.5} />
+                      <span>{tDetail("copyDetails")}</span>
+                    </Button>
+
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2 text-xs font-medium text-muted-foreground hover:text-foreground min-h-[38px] sm:min-h-9 transition-colors duration-150"
+                        >
+                          <Eye className="h-4 w-4" strokeWidth={1.5} />
+                          <span>{tDetail("previewQr")}</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="center"
+                        sideOffset={8}
+                        dir="rtl"
+                        className="w-80 sm:w-96 p-4 text-start space-y-2.5 shadow-xl bg-surface/98 border border-border"
+                      >
+                        <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                          <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                            {tDetail("qrContentsTitle")}
+                          </h4>
+                        </div>
+                        <div className="rounded-lg bg-surface-raised border border-border/60 p-3 overflow-hidden">
+                          <pre
+                            dir="rtl"
+                            className="font-mono text-xs text-foreground/90 whitespace-pre-wrap break-words leading-relaxed select-all"
+                          >
+                            {qrPayloadText}
+                          </pre>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={handleDownloadQr}
-                      className="gap-2 text-muted hover:text-foreground w-full sm:w-auto min-h-[44px] sm:min-h-0"
+                      className="gap-2 text-xs font-medium text-muted hover:text-foreground min-h-[38px] sm:min-h-9 transition-colors duration-150"
                     >
-                      <Download className="h-4 w-4" />
+                      <Download className="h-4 w-4" strokeWidth={1.5} />
                       <span>{tDetail("downloadQr")}</span>
                     </Button>
                   </div>
